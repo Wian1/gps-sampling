@@ -1,0 +1,204 @@
+<title>GPS Accuracy Sampler</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: single centered column of stacked status cards, phone-first field tool */
+  :root {
+    --bg: #eef2f6;
+    --surface: #ffffff;
+    --fg: #0f1a26;
+    --muted: #5a6b7b;
+    --line: #d4dee7;
+    --accent: #2563eb;
+    --good: #0f9d6b;
+    --warn: #b7791f;
+    --bad: #d13b3b;
+    --mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c1118;
+      --surface: #161f2b;
+      --fg: #e7eef5;
+      --muted: #91a2b4;
+      --line: #263341;
+      --accent: #5b8cff;
+      --good: #34d399;
+      --warn: #f6c257;
+      --bad: #f87171;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c1118;
+    --surface: #161f2b;
+    --fg: #e7eef5;
+    --muted: #91a2b4;
+    --line: #263341;
+    --accent: #5b8cff;
+    --good: #34d399;
+    --warn: #f6c257;
+    --bad: #f87171;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    margin: 0;
+  }
+  .wrap {
+    max-width: 480px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  header h1 { font-size: 1.25rem; margin: 0; text-wrap: balance; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: .85rem; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  label { display: block; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  select, button {
+    width: 100%; font-size: 1rem; padding: 14px; border-radius: 10px;
+    box-sizing: border-box; font-family: inherit;
+  }
+  select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); margin-bottom: 14px; }
+  button { border: 0; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  button.stop { background: var(--bad); }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #status { font-size: .82rem; color: var(--muted); margin-top: 10px; line-height: 1.4; }
+  .row {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    padding: 8px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums;
+  }
+  .row:last-child { border-bottom: 0; }
+  .k { color: var(--muted); font-size: .9rem; min-width: 0; }
+  .v { font-weight: 600; font-family: var(--mono); text-align: right; }
+  .v.big { font-size: 2rem; }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .hint { font-size: .78rem; color: var(--muted); line-height: 1.5; margin: 0; }
+  .hint b { color: var(--fg); }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>WIRESync - GPS Accuracy Sampler</h1>
+    <p>Measures what location accuracy this device actually gets on site. Stand where staff log in, then tap Start and Allow.</p>
+  </header>
+
+  <div class="card">
+    <label for="fac">Which facility are you standing at?</label>
+    <select id="fac">
+      <option value="">none / just measure accuracy</option>
+    </select>
+    <button id="toggle">Start sampling</button>
+    <div id="status">Idle. Tap "Start sampling", then choose <b>Allow</b> when the phone asks for location.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><span class="k">Accuracy (now)</span><span class="v big" id="acc">-</span></div>
+    <div class="row"><span class="k">Distance to facility</span><span class="v" id="dist">-</span></div>
+    <div class="row"><span class="k">Would 500 m geofence pass?</span><span class="v" id="pass">-</span></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><span class="k">Samples</span><span class="v" id="n">0</span></div>
+    <div class="row"><span class="k">Best accuracy</span><span class="v" id="best">-</span></div>
+    <div class="row"><span class="k">Average accuracy</span><span class="v" id="avg">-</span></div>
+    <div class="row"><span class="k">Worst accuracy</span><span class="v" id="worst">-</span></div>
+    <div class="row"><span class="k">Latitude</span><span class="v" id="lat">-</span></div>
+    <div class="row"><span class="k">Longitude</span><span class="v" id="lon">-</span></div>
+  </div>
+
+  <p class="hint">Green accuracy (≤50 m) means a 500 m geofence is comfortable here. Amber (≤200 m) still works with the accuracy-aware rule. Red (>200 m, common deep inside a steel shed) means this spot may need the login point moved near a door, or a looser radius. Let it run 30–60 s, then screenshot the cards and send them back.</p>
+</div>
+
+<script>
+  var FACILITIES = [
+    ["RELOAD DC", -13.0183095, 28.6501316],
+    ["POLYTRA NDOLA", -12.9906852, 28.6497469],
+    ["SLS NDOLA", -13.0185358, 28.6578987],
+    ["IMPALA NDOLA", -13.0104789, 28.6502418],
+    ["BHL NDOLA", -12.9966257, 28.6972171],
+    ["SANHE LOGISTICS NDOLA", -13.0168, 28.6949],
+    ["POSEIDON ZAMBIA", -13.0271137, 28.6799986]
+  ];
+  var RADIUS = 500;
+  var $ = function (id) { return document.getElementById(id); };
+  var sel = $("fac");
+  FACILITIES.forEach(function (f, i) {
+    var o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = f[0];
+    sel.appendChild(o);
+  });
+
+  function haversine(la1, lo1, la2, lo2) {
+    var R = 6371000, r = Math.PI / 180;
+    var dLa = (la2 - la1) * r, dLo = (lo2 - lo1) * r;
+    var a = Math.sin(dLa / 2) * Math.sin(dLa / 2) +
+            Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  var watchId = null, n = 0, best = Infinity, worst = 0, sum = 0;
+
+  function reset() {
+    n = 0; best = Infinity; worst = 0; sum = 0;
+    ["best", "avg", "worst", "acc", "dist", "lat", "lon"].forEach(function (i) { $(i).textContent = "-"; });
+    $("n").textContent = "0";
+    $("pass").textContent = "-"; $("pass").className = "v";
+    $("acc").className = "v big";
+  }
+
+  function onPos(p) {
+    var la = p.coords.latitude, lo = p.coords.longitude, acc = p.coords.accuracy;
+    n++; sum += acc; best = Math.min(best, acc); worst = Math.max(worst, acc);
+    $("n").textContent = String(n);
+    $("acc").textContent = Math.round(acc) + " m";
+    $("acc").className = "v big " + (acc <= 50 ? "good" : acc <= 200 ? "warn" : "bad");
+    $("best").textContent = Math.round(best) + " m";
+    $("avg").textContent = Math.round(sum / n) + " m";
+    $("worst").textContent = Math.round(worst) + " m";
+    $("lat").textContent = la.toFixed(6);
+    $("lon").textContent = lo.toFixed(6);
+    if (sel.value !== "") {
+      var f = FACILITIES[Number(sel.value)];
+      var d = haversine(la, lo, f[1], f[2]);
+      $("dist").textContent = Math.round(d) + " m";
+      var outside = (d - acc) > RADIUS;
+      $("pass").textContent = outside ? "NO - would warn" : "yes";
+      $("pass").className = "v " + (outside ? "bad" : "good");
+    } else {
+      $("dist").textContent = "-";
+      $("pass").textContent = "-"; $("pass").className = "v";
+    }
+    $("status").textContent = "Sampling… hold still and give it a moment to settle.";
+  }
+
+  function onErr(e) {
+    $("status").textContent = "Error: " + e.message + " - make sure location is allowed and the page is on an https:// link.";
+  }
+
+  $("toggle").addEventListener("click", function () {
+    if (watchId === null) {
+      if (!navigator.geolocation) { $("status").textContent = "This browser has no geolocation support."; return; }
+      reset();
+      watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 27000 });
+      this.textContent = "Stop"; this.classList.add("stop");
+      $("status").textContent = "Starting… tap Allow if the phone asks.";
+    } else {
+      navigator.geolocation.clearWatch(watchId); watchId = null;
+      this.textContent = "Start sampling"; this.classList.remove("stop");
+      $("status").textContent = "Stopped. Tap Start to sample again.";
+    }
+  });
+</script>
